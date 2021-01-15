@@ -11,7 +11,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 from helpers import encode_dates, loguniform, similarity_encode
 
 df = pd.read_csv(
-    r"data\data_final.csv",
+    r"data\insurance.csv",
     parse_dates=[],
     index_col=[],
     delimiter=",",
@@ -24,11 +24,11 @@ print(
     .sort_values(["dtype", "proportion unique"])
 )
 
-TARGET = "Winner"
-ENCODE = False
+TARGET = "charges"
+TARGET_LEAKAGE = []
 y = df[TARGET]
 X = df.drop(
-    [TARGET, "Finished"],
+    [TARGET, *TARGET_LEAKAGE],
     axis=1,
 )
 
@@ -44,6 +44,7 @@ unique.columns = [
 ]
 unique
 
+ENCODE = False
 if ENCODE:
     X = similarity_encode(
         X,
@@ -53,10 +54,12 @@ if ENCODE:
         drop_original=False,
     )
 
-X[obj_cols] = X[obj_cols].astype("category")
+CATEGORIZE = True
+if CATEGORIZE:
+    X[obj_cols] = X[obj_cols].astype("category")
 
-sns.kdeplot(y)
-plt.title("KDE distribution")
+sns.displot(y)
+plt.title("Distribution")
 plt.show()
 
 SEED = 0
@@ -72,8 +75,8 @@ Xs, ys = Xt.loc[sample_idx], yt.loc[sample_idx]
 ds = lgb.Dataset(Xs, ys)
 dv = lgb.Dataset(Xv, yv, free_raw_data=False)
 
-OBJECTIVE = "binary"
-METRIC = "binary_logloss"
+OBJECTIVE = "regression"
+METRIC = "rmse"
 MAXIMIZE = False
 EARLY_STOPPING_ROUNDS = 10
 MAX_ROUNDS = 10000
@@ -84,7 +87,7 @@ params = {
     "metric": METRIC,
     "verbose": -1,
     "n_jobs": 6,
-    "num_classes": 1,
+    # "num_classes": 1,
     # "tweedie_variance_power": 1.3,
 }
 
@@ -101,12 +104,53 @@ model = lgb.train(
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
 plt.show()
 
-best_etas = {"learning_rate": [], "score": []}
+TUNE_ETA = False
+if TUNE_ETA:
+    best_etas = {"learning_rate": [], "score": []}
 
-for _ in range(60):
-    eta = loguniform(-4, 0)
-    best_etas["learning_rate"].append(eta)
-    params["learning_rate"] = eta
+    for _ in range(30):
+        eta = loguniform(-5, 0)
+        best_etas["learning_rate"].append(eta)
+        params["learning_rate"] = eta
+        model = lgb.train(
+            params,
+            dt,
+            valid_sets=[dt, dv],
+            valid_names=["training", "valid"],
+            num_boost_round=MAX_ROUNDS,
+            early_stopping_rounds=EARLY_STOPPING_ROUNDS,
+            verbose_eval=False,
+        )
+        best_etas["score"].append(model.best_score["valid"][METRIC])
+
+    best_eta_df = pd.DataFrame.from_dict(best_etas)
+    lowess_data = lowess(
+        best_eta_df["score"],
+        best_eta_df["learning_rate"],
+    )
+
+    rounded_data = lowess_data.copy()
+    rounded_data[:, 1] = rounded_data[:, 1].round(4)
+    rounded_data = rounded_data[::-1]  # reverse to find first best
+    # maximize or minimize metric
+    if MAXIMIZE:
+        best = np.argmax
+    else:
+        best = np.argmin
+    best_eta = rounded_data[best(rounded_data[:, 1]), 0]
+
+    # plot relationship between learning rate and performance, with an eta selected just before diminishing returns
+    # use log scale as it's easier to observe the whole graph
+    sns.lineplot(x=lowess_data[:, 0], y=lowess_data[:, 1])
+    plt.xscale("log")
+    plt.axvline(best_eta, color="orange")
+    plt.title("Smoothed relationship between learning rate and metric.")
+    plt.xlabel("learning rate")
+    plt.ylabel(METRIC)
+    plt.show()
+
+    print(f"Good learning rate: {best_eta:4f}")
+    params["learning_rate"] = best_eta
     model = lgb.train(
         params,
         dt,
@@ -114,47 +158,10 @@ for _ in range(60):
         valid_names=["training", "valid"],
         num_boost_round=MAX_ROUNDS,
         early_stopping_rounds=EARLY_STOPPING_ROUNDS,
-        verbose_eval=False,
+        verbose_eval=REPORT_ROUNDS,
     )
-    best_etas["score"].append(model.best_score["valid"][METRIC])
-
-best_eta_df = pd.DataFrame.from_dict(best_etas)
-lowess_data = lowess(
-    best_eta_df["score"],
-    best_eta_df["learning_rate"],
-)
-
-rounded_data = lowess_data.copy()
-rounded_data[:, 1] = rounded_data[:, 1].round(4)
-rounded_data = rounded_data[::-1]  # reverse to find first best
-# maximize or minimize metric
-if MAXIMIZE:
-    best = np.argmax
 else:
-    best = np.argmin
-best_eta = rounded_data[best(rounded_data[:, 1]), 0]
-
-# plot relationship between learning rate and performance, with an eta selected just before diminishing returns
-# use log scale as it's easier to observe the whole graph
-sns.lineplot(x=lowess_data[:, 0], y=lowess_data[:, 1])
-plt.xscale("log")
-plt.axvline(best_eta, color="orange")
-plt.title("Smoothed relationship between learning rate and metric.")
-plt.xlabel("learning rate")
-plt.ylabel(METRIC)
-plt.show()
-
-print(f"Good learning rate: {best_eta:4f}")
-params["learning_rate"] = best_eta
-model = lgb.train(
-    params,
-    dt,
-    valid_sets=[dt, dv],
-    valid_names=["training", "valid"],
-    num_boost_round=MAX_ROUNDS,
-    early_stopping_rounds=EARLY_STOPPING_ROUNDS,
-    verbose_eval=REPORT_ROUNDS,
-)
+    params["learning_rate"] = 0.009875772374731435
 
 threshold = 0.75
 corr = Xt.corr(method="kendall")
@@ -331,12 +338,7 @@ for key, value in best_params.items():
 
 print(dropped_features)
 
-
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
 plt.show()
 
-from sklearn.metrics import accuracy_score
-
-print(
-    f"Accuracy: {accuracy_score(yv, model.predict(Xv, num_iteration=model.best_iteration) > 0.5):.2%}"
-)
+print(score)
