@@ -315,37 +315,55 @@ print(dropped_features)
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
 plt.show()
 
-from optuna.integration.lightgbm import LightGBMTuner
+TUNE_HYPER = True
+if TUNE_HYPER:
+    from optuna.integration.lightgbm import LightGBMTuner
 
-dt = lgb.Dataset(Xt, yt, silent=True)
-ds = lgb.Dataset(Xs, ys, silent=True)
-dv = lgb.Dataset(Xv, yv, silent=True)
+    dt = lgb.Dataset(Xt, yt, silent=True)
+    ds = lgb.Dataset(Xs, ys, silent=True)
+    dv = lgb.Dataset(Xv, yv, silent=True)
 
-auto_booster = LightGBMTuner(
-    params,
-    dt,
-    valid_sets=[dt, dv],
-    valid_names=["training", "valid"],
-    num_boost_round=MAX_ROUNDS,
-    verbose_eval=False,
-    early_stopping_rounds=EARLY_STOPPING_ROUNDS,
-)
+    auto_booster = LightGBMTuner(
+        params,
+        dt,
+        valid_sets=[dt, dv],
+        valid_names=["training", "valid"],
+        num_boost_round=MAX_ROUNDS,
+        verbose_eval=False,
+        early_stopping_rounds=EARLY_STOPPING_ROUNDS,
+    )
 
-auto_booster.run()
+    auto_booster.run()
 
-score = auto_booster.best_score
-best_params = auto_booster.best_params
-model = auto_booster.get_best_booster()
-best_params["num_boost_rounds"] = model.best_iteration
-print("Best params:", best_params)
-print(f"  {METRIC} = {score}")
-print("  Params: ")
-for key, value in best_params.items():
-    print(f"    {key}: {value}")
+    score = auto_booster.best_score
+    best_params = auto_booster.best_params
+    model = auto_booster.get_best_booster()
+    best_params["num_boost_rounds"] = model.best_iteration
+    print("Best params:", best_params)
+    print(f"  {METRIC} = {score}")
+    print("  Params: ")
+    for key, value in best_params.items():
+        print(f"    {key}: {value}")
 
-print(dropped_features)
+    print(dropped_features)
+else:
+    score = 3866.0967357477866
+    best_params = {
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "verbose": -1,
+        "n_jobs": 6,
+        "learning_rate": 0.009875772374731435,
+        "feature_pre_filter": False,
+        "lambda_l1": 0.01631989246318018,
+        "lambda_l2": 0.001287128443517099,
+        "num_leaves": 8,
+        "feature_fraction": 0.8999999999999999,
+        "bagging_fraction": 1.0,
+        "bagging_freq": 0,
+        "min_child_samples": 20,
+    }
+
 
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
 plt.show()
-
-print(score)
