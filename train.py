@@ -5,48 +5,41 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 df = pd.read_csv(
-    r"data\data_final.csv",
+    r"data\insurance.csv",
     parse_dates=[],
     index_col=[],
 )
-TARGET = "Winner"
-DROPPED_FEATURES = [
-    "Odds",
-    "Odds_Recent",
-    "Races_380",
-    "Public_Estimate",
-    "Early_Recent",
-]
+TARGET = "charges"
+DROPPED_FEATURES = []
 y = df[TARGET]
-X = df.drop([TARGET, "Finished", *DROPPED_FEATURES], axis=1)
-d = lgb.Dataset(X, y, silent=True)
+X = df.drop([TARGET, *DROPPED_FEATURES], axis=1)
 
-NUM_BOOST_ROUND = 439
+CATEGORIZE = True
+if CATEGORIZE:
+    obj_cols = X.select_dtypes("object").columns
+    X[obj_cols] = X[obj_cols].astype("category")
+
 params = {
-    "objective": "binary",
-    "metric": "binary_logloss",
+    "objective": "regression",
+    "metric": "rmse",
     "verbose": -1,
     "n_jobs": 6,
-    "learning_rate": 0.008591072626027468,
+    "learning_rate": 0.009875772374731435,
     "feature_pre_filter": False,
-    "lambda_l1": 5.13269456420478,
-    "lambda_l2": 2.0036887398035568e-08,
-    "num_leaves": 2,
-    "feature_fraction": 0.92,
-    "bagging_fraction": 0.8868019137735326,
-    "bagging_freq": 1,
+    "lambda_l1": 1.8299011908715305e-06,
+    "lambda_l2": 0.007585780742403452,
+    "num_leaves": 6,
+    "feature_fraction": 1.0,
+    "bagging_fraction": 0.9836888816811709,
+    "bagging_freq": 3,
     "min_child_samples": 20,
+    "num_boost_rounds": 471,
 }
-
-model = lgb.train(params, d, num_boost_round=NUM_BOOST_ROUND)
-
-Path("figures").mkdir(exist_ok=True)
-lgb.plot_importance(model, grid=False, figsize=(10, 5))
-plt.savefig("figures/feature_importange.png")
+d = lgb.Dataset(X, y, silent=True)
+model = lgb.train(params, d)
 
 Path("models").mkdir(exist_ok=True)
 model.save_model(
     "models/model.pkl",
-    num_iteration=NUM_BOOST_ROUND,
     importance_type="gain",
 )

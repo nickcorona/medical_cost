@@ -7,6 +7,7 @@ import pandas as pd
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from statsmodels.nonparametric.smoothers_lowess import lowess
+import json
 
 from helpers import encode_dates, loguniform, similarity_encode
 
@@ -315,7 +316,7 @@ print(dropped_features)
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
 plt.show()
 
-TUNE_HYPER = True
+TUNE_HYPER = False
 if TUNE_HYPER:
     from optuna.integration.lightgbm import LightGBMTuner
 
@@ -332,7 +333,6 @@ if TUNE_HYPER:
         verbose_eval=False,
         early_stopping_rounds=EARLY_STOPPING_ROUNDS,
     )
-
     auto_booster.run()
 
     score = auto_booster.best_score
@@ -341,28 +341,41 @@ if TUNE_HYPER:
     best_params["num_boost_rounds"] = model.best_iteration
     print("Best params:", best_params)
     print(f"  {METRIC} = {score}")
-    print("  Params: ")
-    for key, value in best_params.items():
-        print(f"    {key}: {value}")
-
+    print("Params:")
+    print(json.dumps(best_params, indent=4))
     print(dropped_features)
 else:
-    score = 3866.0967357477866
+    dt = lgb.Dataset(Xt, yt, silent=True)
+    ds = lgb.Dataset(Xs, ys, silent=True)
+    dv = lgb.Dataset(Xv, yv, silent=True)
+    # rmse: 3831
     best_params = {
-        "objective": "binary",
-        "metric": "binary_logloss",
+        "objective": "regression",
+        "metric": "rmse",
         "verbose": -1,
         "n_jobs": 6,
         "learning_rate": 0.009875772374731435,
         "feature_pre_filter": False,
-        "lambda_l1": 0.01631989246318018,
-        "lambda_l2": 0.001287128443517099,
-        "num_leaves": 8,
-        "feature_fraction": 0.8999999999999999,
-        "bagging_fraction": 1.0,
-        "bagging_freq": 0,
+        "lambda_l1": 1.8299011908715305e-06,
+        "lambda_l2": 0.007585780742403452,
+        "num_leaves": 6,
+        "feature_fraction": 1.0,
+        "bagging_fraction": 0.9836888816811709,
+        "bagging_freq": 3,
         "min_child_samples": 20,
+        "num_boost_rounds": 471,
     }
+    model = lgb.train(
+        best_params,
+        dt,
+        valid_sets=[dt, dv],
+        valid_names=["training", "valid"],
+        num_boost_round=MAX_ROUNDS,
+        early_stopping_rounds=EARLY_STOPPING_ROUNDS,
+        verbose_eval=REPORT_ROUNDS,
+    )
+    score = model.best_score['valid'][METRIC]
+    print(f"{METRIC}: {score:.4f}")
 
 
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
