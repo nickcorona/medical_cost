@@ -374,11 +374,13 @@ else:
         early_stopping_rounds=EARLY_STOPPING_ROUNDS,
         verbose_eval=REPORT_ROUNDS,
     )
-    score = model.best_score['valid'][METRIC]
+    score = model.best_score["valid"][METRIC]
     print(f"{METRIC}: {score:.4f}")
 
 
-lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
-figure_path = Path('figures')
+lgb.plot_importance(
+    model, grid=False, max_num_features=20, importance_type="gain", figsize=(10, 5)
+)
+figure_path = Path("figures")
 figure_path.mkdir(exist_ok=True)
-plt.savefig(figure_path / 'feature_importance.png')
+plt.savefig(figure_path / "feature_importance.png")
