@@ -379,4 +379,6 @@ else:
 
 
 lgb.plot_importance(model, grid=False, max_num_features=20, importance_type="gain")
-plt.show()
+figure_path = Path('figures')
+figure_path.mkdir(exist_ok=True)
+plt.savefig(figure_path / 'feature_importance.png')
